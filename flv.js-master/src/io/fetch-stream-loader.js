@@ -56,6 +56,7 @@ class FetchStreamLoader extends BaseLoader {
         this._requestAbort = false;
         this._contentLength = null;
         this._receivedLength = 0;
+        this.transmuxSpeedHistory = [];
     }
 
     destroy() {
@@ -180,8 +181,11 @@ class FetchStreamLoader extends BaseLoader {
         signal = controller.signal;
     }
     
+
     _pump(reader) {  // ReadableStreamReader
+        let t0 = performance.now();
         return reader.read().then((result) => { 
+            let t1 = performance.now();
             if (result.done) {
                 // First check received length
                 if (this._contentLength !== null && this._receivedLength < this._contentLength) {
@@ -192,7 +196,7 @@ class FetchStreamLoader extends BaseLoader {
                     if (this._onError) {
                         this._onError(type, info);
                     } else {
-                        throw new RuntimeException(info.msg);
+                        //throw new RuntimeException(info.msg);
                     }
                 } else {
                     // OK. Download complete
@@ -207,17 +211,32 @@ class FetchStreamLoader extends BaseLoader {
                     this._status = LoaderStatus.kComplete;
                     return reader.cancel();
                 }
-
                 this._status = LoaderStatus.kBuffering;
 
                 let chunk = result.value.buffer;
                 let byteStart = this._range.from + this._receivedLength;
                 this._receivedLength += chunk.byteLength;
 
+                let time = (t1 - t0)*1000;
+                this.transmuxSpeedHistory.push((chunk.byteLength /1024)/ time);
+
+                if (this.transmuxSpeedHistory.length > 199) {
+
+                    let averageSpeed = 0;
+
+                    this.transmuxSpeedHistory.forEach(element => {
+                        averageSpeed = averageSpeed + element;
+                    });
+
+                    averageSpeed /= 200;
+                    Log.w("chunk download speed :" + averageSpeed);
+
+                    this.transmuxSpeedHistory.splice(0, this.transmuxSpeedHistory.length)
+                }
+                
                 if (this._onDataArrival) {
                     this._onDataArrival(chunk, byteStart, this._receivedLength);
                 }
-
                 this._pump(reader);
             }
         }).catch((e) => {
