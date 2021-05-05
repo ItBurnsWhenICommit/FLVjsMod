@@ -25,7 +25,7 @@ import MP4Remuxer from '../remux/mp4-remuxer.js';
 import DemuxErrors from '../demux/demux-errors.js';
 import IOController from '../io/io-controller.js';
 import TransmuxingEvents from './transmuxing-events.js';
-import {LoaderStatus, LoaderErrors} from '../io/loader.js';
+import { LoaderStatus, LoaderErrors } from '../io/loader.js';
 
 // Transmuxing (IO, Demuxing, Remuxing) controller, with multipart support
 class TransmuxingController {
@@ -269,8 +269,8 @@ class TransmuxingController {
             this._demuxer.onScriptDataArrived = this._onScriptDataArrived.bind(this);
 
             this._remuxer.bindDataSource(this._demuxer
-                         .bindDataSource(this._ioctl
-            ));
+                .bindDataSource(this._ioctl
+                ));
 
             this._remuxer.onInitSegment = this._onRemuxerInitSegmentArrival.bind(this);
             this._remuxer.onMediaSegment = this._onRemuxerMediaSegmentArrival.bind(this);
@@ -391,21 +391,21 @@ class TransmuxingController {
     }
 
     _enableStatisticsReporter() {
-        if (this._statisticsReporter == null) {
-            this._statisticsReporter = self.setInterval(
-                this._reportStatisticsInfo.bind(this),
-            this._config.statisticsInfoReportInterval);
-        }
+        /* if (this._statisticsReporter == null) {
+             this._statisticsReporter = self.setInterval(
+                 this._reportStatisticsInfo.bind(this),
+             this._config.statisticsInfoReportInterval);
+         }*/
     }
 
-    _disableStatisticsReporter() {
+    _disableStatisticsReporter() {/*
         if (this._statisticsReporter) {
             self.clearInterval(this._statisticsReporter);
             this._statisticsReporter = null;
-        }
+        }*/
     }
 
-    _reportSegmentMediaInfo(segmentIndex) {
+    _reportSegmentMediaInfo(segmentIndex) {/*
         let segmentInfo = this._mediaInfo.segments[segmentIndex];
         let exportInfo = Object.assign({}, segmentInfo);
 
@@ -414,10 +414,11 @@ class TransmuxingController {
         delete exportInfo.segments;
         delete exportInfo.keyframesIndex;
 
-        this._emitter.emit(TransmuxingEvents.MEDIA_INFO, exportInfo);
+        this._emitter.emit(TransmuxingEvents.MEDIA_INFO, exportInfo);*/
     }
 
     _reportStatisticsInfo() {
+        /*
         let info = {};
 
         info.url = this._ioctl.currentURL;
@@ -431,7 +432,7 @@ class TransmuxingController {
         info.currentSegmentIndex = this._currentSegmentIndex;
         info.totalSegmentCount = this._mediaDataSource.segments.length;
 
-        this._emitter.emit(TransmuxingEvents.STATISTICS_INFO, info);
+        this._emitter.emit(TransmuxingEvents.STATISTICS_INFO, info);*/
     }
 
 }

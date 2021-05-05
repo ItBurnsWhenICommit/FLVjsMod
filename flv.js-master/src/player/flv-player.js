@@ -24,9 +24,9 @@ import Transmuxer from '../core/transmuxer.js';
 import TransmuxingEvents from '../core/transmuxing-events.js';
 import MSEController from '../core/mse-controller.js';
 import MSEEvents from '../core/mse-events.js';
-import {ErrorTypes, ErrorDetails} from './player-errors.js';
-import {createDefaultConfig} from '../config.js';
-import {InvalidArgumentException, IllegalStateException} from '../utils/exception.js';
+import { ErrorTypes, ErrorDetails } from './player-errors.js';
+import { createDefaultConfig } from '../config.js';
+import { InvalidArgumentException, IllegalStateException } from '../utils/exception.js';
 
 class FlvPlayer {
 
@@ -80,8 +80,8 @@ class FlvPlayer {
         this._statisticsInfo = null;
 
         let chromeNeedIDRFix = (Browser.chrome &&
-                               (Browser.version.major < 50 ||
-                               (Browser.version.major === 50 && Browser.version.build < 2661)));
+            (Browser.version.major < 50 ||
+                (Browser.version.major === 50 && Browser.version.build < 2661)));
         this._alwaysSeekKeyframe = (chromeNeedIDRFix || Browser.msedge || Browser.msie) ? true : false;
 
         if (this._alwaysSeekKeyframe) {
@@ -149,9 +149,9 @@ class FlvPlayer {
         });
         this._msectl.on(MSEEvents.ERROR, (info) => {
             this._emitter.emit(PlayerEvents.ERROR,
-                               ErrorTypes.MEDIA_ERROR,
-                               ErrorDetails.MEDIA_MSE_ERROR,
-                               info
+                ErrorTypes.MEDIA_ERROR,
+                ErrorDetails.MEDIA_MSE_ERROR,
+                info
             );
         });
 
@@ -236,7 +236,7 @@ class FlvPlayer {
             this._emitter.emit(PlayerEvents.ERROR, ErrorTypes.NETWORK_ERROR, detail, info);
         });
         this._transmuxer.on(TransmuxingEvents.DEMUX_ERROR, (detail, info) => {
-            this._emitter.emit(PlayerEvents.ERROR, ErrorTypes.MEDIA_ERROR, detail, {code: -1, msg: info});
+            this._emitter.emit(PlayerEvents.ERROR, ErrorTypes.MEDIA_ERROR, detail, { code: -1, msg: info });
         });
         this._transmuxer.on(TransmuxingEvents.MEDIA_INFO, (mediaInfo) => {
             this._mediaInfo = mediaInfo;
@@ -349,7 +349,7 @@ class FlvPlayer {
         let hasQualityInfo = true;
         let decoded = 0;
         let dropped = 0;
-            
+
         if (this._mediaElement.getVideoPlaybackQuality) {
             let quality = this._mediaElement.getVideoPlaybackQuality();
             decoded = quality.totalVideoFrames;
@@ -458,9 +458,9 @@ class FlvPlayer {
         let directSeekBegin = false;
         let directSeekBeginTime = 0;
 
-        if (seconds < 0.3 && this._mediaElement.buffered.length > 0) {
+        if (seconds < 0.1 && this._mediaElement.buffered.length > 0) {
             let videoBeginTime = this._mediaElement.buffered.start(0);
-            if ((videoBeginTime < 0.3 && seconds < videoBeginTime) || Browser.safari) {
+            if ((videoBeginTime < 0.1 && seconds < videoBeginTime) || Browser.safari) {
                 directSeekBegin = true;
                 // also workaround for Safari: Seek to 0 may cause video stuck, use 0.1 to avoid
                 directSeekBeginTime = Browser.safari ? 0.1 : videoBeginTime;
@@ -470,7 +470,7 @@ class FlvPlayer {
         if (directSeekBegin) {  // seek to video begin, set currentTime directly if beginPTS buffered
             this._requestSetTime = true;
             this._mediaElement.currentTime = directSeekBeginTime;
-        }  else if (directSeek) {  // buffered position
+        } else if (directSeek) {  // buffered position
             if (!this._alwaysSeekKeyframe) {
                 this._requestSetTime = true;
                 this._mediaElement.currentTime = seconds;
@@ -560,10 +560,10 @@ class FlvPlayer {
             return;
         }
 
-        if (target < 1.0 && buffered.length > 0) {
+        if (target < 0.2 && buffered.length > 0) {
             // seek to video begin, set currentTime directly if beginPTS buffered
             let videoBeginTime = buffered.start(0);
-            if ((videoBeginTime < 1.0 && target < videoBeginTime) || Browser.safari) {
+            if ((videoBeginTime < 0.2 && target < videoBeginTime) || Browser.safari) {
                 this._requestSetTime = true;
                 // also workaround for Safari: Seek to 0 may cause video stuck, use 0.1 to avoid
                 this._mediaElement.currentTime = Browser.safari ? 0.1 : videoBeginTime;
@@ -604,7 +604,6 @@ class FlvPlayer {
     _onvProgress(e) {
         this._checkAndResumeStuckPlayback();
     }
-
 }
 
 export default FlvPlayer;

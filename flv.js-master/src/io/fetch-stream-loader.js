@@ -18,8 +18,8 @@
 
 import Log from '../utils/logger.js';
 import Browser from '../utils/browser.js';
-import {BaseLoader, LoaderStatus, LoaderErrors} from './loader.js';
-import {RuntimeException} from '../utils/exception.js';
+import { BaseLoader, LoaderStatus, LoaderErrors } from './loader.js';
+import { RuntimeException } from '../utils/exception.js';
 
 /* fetch + stream IO loader. Currently working on chrome 43+.
  * fetch provides a better alternative http API to XMLHttpRequest
@@ -93,7 +93,7 @@ class FetchStreamLoader extends BaseLoader {
                 }
             }
         }
-        
+
         let params = {
             method: 'GET',
             headers: headers,
@@ -155,11 +155,11 @@ class FetchStreamLoader extends BaseLoader {
                 }
 
                 return this._pump.call(this, res.body.getReader());
-                
+
             } else {
                 this._status = LoaderStatus.kError;
                 if (this._onError) {
-                    this._onError(LoaderErrors.HTTP_STATUS_CODE_INVALID, {code: res.status, msg: res.statusText});
+                    this._onError(LoaderErrors.HTTP_STATUS_CODE_INVALID, { code: res.status, msg: res.statusText });
                 } else {
                     throw new RuntimeException('FetchStreamLoader: Http code invalid, ' + res.status + ' ' + res.statusText);
                 }
@@ -180,19 +180,18 @@ class FetchStreamLoader extends BaseLoader {
         controller = new AbortController();
         signal = controller.signal;
     }
-    
+
 
     _pump(reader) {  // ReadableStreamReader
-        let t0 = performance.now();
-        return reader.read().then((result) => { 
-            let t1 = performance.now();
+        return reader.read().then((result) => {
+            //let t1 = performance.now();
             if (result.done) {
                 // First check received length
                 if (this._contentLength !== null && this._receivedLength < this._contentLength) {
                     // Report Early-EOF
                     this._status = LoaderStatus.kError;
                     let type = LoaderErrors.EARLY_EOF;
-                    let info = {code: -1, msg: 'Fetch stream meet Early-EOF'};
+                    let info = { code: -1, msg: 'Fetch stream meet Early-EOF' };
                     if (this._onError) {
                         this._onError(type, info);
                     } else {
@@ -217,23 +216,6 @@ class FetchStreamLoader extends BaseLoader {
                 let byteStart = this._range.from + this._receivedLength;
                 this._receivedLength += chunk.byteLength;
 
-                let time = (t1 - t0)*1000;
-                this.transmuxSpeedHistory.push((chunk.byteLength /1024)/ time);
-
-                if (this.transmuxSpeedHistory.length > 199) {
-
-                    let averageSpeed = 0;
-
-                    this.transmuxSpeedHistory.forEach(element => {
-                        averageSpeed = averageSpeed + element;
-                    });
-
-                    averageSpeed /= 200;
-                    Log.w("chunk download speed :" + averageSpeed);
-
-                    this.transmuxSpeedHistory.splice(0, this.transmuxSpeedHistory.length)
-                }
-                
                 if (this._onDataArrival) {
                     this._onDataArrival(chunk, byteStart, this._receivedLength);
                 }
