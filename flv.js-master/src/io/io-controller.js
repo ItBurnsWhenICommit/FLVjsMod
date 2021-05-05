@@ -38,7 +38,7 @@ import { RuntimeException, IllegalStateException, InvalidArgumentException } fro
  * 
  */
 
-const toNumber = 0.3;
+const toNumber = 1;
 
 // Manage IO Loaders
 class IOController {
@@ -397,46 +397,108 @@ class IOController {
 
         this._speedSampler.addBytes(chunk.byteLength);
 
-        if (this._stashUsed === 0 || chunk.byteLength >= this._bufferSize) {//if our buffer is empty or theres new data the size (or bigger) than our buffer
+        if (this._stashUsed === 0) {//if our buffer is empty [0000]
             let consumed = this._dispatchChunks(chunk, byteStart);//give the entire chunk to consumer, note how many bytes were used
 
             if (consumed < chunk.byteLength) {//if not all arriving bytes were used, remaining have to be stored in a buffer for next cycle
-                let remain = chunk.byteLength - consumed; //get remaining data
-                let stashArray = new Uint8Array(this._stashBuffer, 0, this._bufferSize); //create a stash buffer
-                stashArray.set(new Uint8Array(chunk, consumed), 0); //place remaining unconsumed bytes into it for next cycle
-                this._stashUsed += remain;  //note how many unconsumed bytes are in buffer storage now
-                this._stashByteStart = byteStart + consumed;
-            }
-        } else {//we have something in our buffer from a previous chunk
-            let stashArray = new Uint8Array(this._stashBuffer, 0, this._bufferSize); //create a stash buffer
 
-            if (this._stashUsed + chunk.byteLength > this._bufferSize) {//buffer is overflowing , new data + leftovers are bigger than our buffer
-                let overflow = (this._stashUsed + chunk.byteLength) - this._bufferSize; //how much of the new chunk is overflowing ?
-                //newer data is more important than old data -> throw away as many old bytes as needed so newer bytes fit fully into buffer
-                let oldBytesWeCanKeep = new Uint8Array(this._stashBuffer, overflow, this._stashUsed - overflow);
-                stashArray.set(oldBytesWeCanKeep, 0);//stash buffer now holds as many old bytes as we could fit, so there is enough space to fully fit our new chunk
-                this._stashUsed -= overflow; //we threw away old bytes to make space for all the new bytes
-                this._stashByteStart -= overflow;
-                stashArray.set(chunk, this._stashUsed);//paste new chunk into array at offset of remaining old bytes we could fit
-                this._stashUsed = this._bufferSize;//in this case we are using our entire buffer , entire new chunk + as many old bytes as we could fit leftover
+                let remain = chunk.byteLength - consumed; //get leftovers
+                let stashArray = new Uint8Array(this._stashBuffer, 0, this._bufferSize); //create a stash buffer
+
+                if (remain <= this._bufferSize) {//if we have enough space to store it in one go [XX00]
+                    try {
+                        //Log.w(this.TAG, "NO previous stash [0000] -> enough space to store [XX00]");
+                        stashArray.set(new Uint8Array(chunk, consumed), 0); //place remaining unconsumed bytes into buffer
+                        this._stashUsed += remain;  //note how many unconsumed bytes are in buffer storage now
+                        this._stashByteStart = byteStart + consumed; //note when we start
+                    } catch (e) {
+                        Log.w(this.TAG, "NO previous stash [0000] -> enough space to store [XX00] EXCEPTION:" + e);
+                    }
+                }
+                else//else we take what we can store form the newest ones, throwing away overflows XX[XXXX] - will get a gap warning here since we skipped frames
+                {
+                    try {
+                        //Log.w(this.TAG, "NO previous stash [0000] -> overflow XX[XXXX]");
+                        let overflow = remain - this._bufferSize; //how much of the new chunk is overflowing ?
+                        stashArray.set(new Uint8Array(chunk, consumed + overflow), 0); //store what we can, dump the rest
+                        this._stashUsed = this._bufferSize;//in this case we are using our entire buffer
+                        this._stashByteStart = byteStart + consumed - overflow; //note when we start
+                    }
+                    catch (e) {
+                        Log.w(this.TAG, "NO previous stash [0000] -> overflow XX[XXXX] EXCEPTION:" + e);
+                    }
+                }
             }
-            else//buffer is not overflowing but has something in it, we just paste the new chunk into it
+        }
+        else {//we have something in our buffer from a previous chunk
+
+            let stashArray = new Uint8Array(this._stashBuffer, 0, this._bufferSize); //create a stash buffer we obviously have it from the start
+
+            if (this._stashUsed + chunk.byteLength > this._bufferSize) {//buffer is overflowing , new data + leftovers are bigger than our buffer XX[XXXX] - will get a gap warning here since we skipped frames
+
+                this._stashUsed = 0;
+                return;
+
+                try {
+                    Log.w(this.TAG, "previous stash [XX00] -> overflow XX[XXXX]");
+
+                    let overflow = (this._stashUsed + chunk.byteLength) - this._bufferSize; //how much of the new chunk is overflowing ?
+
+
+                    if (overflow < this._stashUsed) {
+                        Log.w(this.TAG, "we can save some old data in overflow");
+
+                        //newer data is more important than old data -> throw away as many old bytes as needed so newer bytes fit fully into buffer
+                        stashArray.set(new Uint8Array(this._stashBuffer, overflow), 0);//stash buffer now holds as many old bytes as we could fit, so there is enough space to fully fit our new chunk
+                        this._stashUsed -= overflow; //we threw away old bytes to make space for all the new bytes
+                        this._stashByteStart -= overflow;
+                        stashArray.set(chunk, this._stashUsed);//paste new chunk into array at offset of remaining old bytes we could fit
+                        this._stashUsed += chunk.byteLength;
+
+                    }
+                    else {
+                        Log.w(this.TAG, "too much new data arrived, dump all old data, store what we can get latest");
+                        stashArray.set(new Uint8Array(chunk, overflow - this._stashUsed), 0); //store what we can, dump the rest
+                        this._stashUsed = this._bufferSize;//in this case we are using our entire buffer
+                        this._stashByteStart = byteStart - (overflow - this._stashUsed);
+                    }
+
+
+                }
+                catch (e) {
+                    Log.w(this.TAG, "previous stash [XX00] -> overflow XX[XXXX] -> overflow:" + overflow + " ,this._stashUsed:" + this._stashUsed + " EXCEPTION:" + e);
+                }
+
+            }
+            else//buffer is not overflowing but has something in it, we just paste the new chunk into it [XX00]
             {
-                stashArray.set(new Uint8Array(chunk), this._stashUsed);
-                this._stashUsed += chunk.byteLength;
+                try {
+                    //Log.w(this.TAG, "previous stash [XX00] -> enough space to store [XX00]");
+                    stashArray.set(new Uint8Array(chunk), this._stashUsed);
+                    this._stashUsed += chunk.byteLength;
+                }
+                catch (e) {
+                    Log.w(this.TAG, "previous stash [XX00] -> enough space to store [XX00] EXCEPTION:" + e);
+                }
             }
 
             let consumed = this._dispatchChunks(this._stashBuffer.slice(0, this._stashUsed), this._stashByteStart);//give the entire buffer to consumer
 
-            if (consumed < this._stashUsed && consumed > 0) {  // unconsumed data remain, we store what is left back into the buffer
-                let remainArray = new Uint8Array(this._stashBuffer, consumed);
-                stashArray.set(remainArray, 0);
+            if (consumed < this._stashUsed) {  //unconsumed data remain, we store what is left back into the buffer [X000]
+                //Log.w(this.TAG, "previous stash [XX00] -> still some left [X000]");
+                try {
+                    stashArray.set(new Uint8Array(this._stashBuffer, consumed), 0);
+                }
+                catch (e) {
+                    Log.w(this.TAG, "previous stash[XX00] -> still some left[X000] EXCEPTION:" + e);
+                }
             }
 
             this._stashUsed -= consumed;
             this._stashByteStart += consumed;
         }
     }
+
 
     _flushStashBuffer(dropUnconsumed) {
         if (this._stashUsed > 0) {
