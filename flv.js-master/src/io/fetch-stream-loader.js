@@ -27,9 +27,6 @@ import { RuntimeException } from '../utils/exception.js';
  * fetch spec   https://fetch.spec.whatwg.org/
  * stream spec  https://streams.spec.whatwg.org/
  */
-var controller = new AbortController();
-var signal = controller.signal;
-
 class FetchStreamLoader extends BaseLoader {
 
     static isSupported() {
@@ -56,7 +53,6 @@ class FetchStreamLoader extends BaseLoader {
         this._requestAbort = false;
         this._contentLength = null;
         this._receivedLength = 0;
-        this.transmuxSpeedHistory = [];
     }
 
     destroy() {
@@ -66,12 +62,6 @@ class FetchStreamLoader extends BaseLoader {
         super.destroy();
     }
 
-    /**
-     * 
-     * @param {*} dataSource Tells us where to get the video stream
-     * @param {*} range Tells us what part of the video stream we need
-     * @param {*} qualityChanged True if we just switched streaming quality
-     */
     open(dataSource, range) {
         this._dataSource = dataSource;
         this._range = range;
@@ -97,7 +87,6 @@ class FetchStreamLoader extends BaseLoader {
         let params = {
             method: 'GET',
             headers: headers,
-            signal: signal,
             mode: 'cors',
             cache: 'default',
             // The default policy of Fetch API in the whatwg standard
@@ -128,12 +117,17 @@ class FetchStreamLoader extends BaseLoader {
             params.referrerPolicy = dataSource.referrerPolicy;
         }
 
-        this._status = LoaderStatus.kConnecting;
+        // add abort controller
+        if (self.AbortController) {
+            this._abortController = new self.AbortController();
+            params.signal = this._abortController.signal;
+        }
 
+        this._status = LoaderStatus.kConnecting;
         self.fetch(seekConfig.url, params).then((res) => {
             if (this._requestAbort) {
-                this._requestAbort = false;
                 this._status = LoaderStatus.kIdle;
+                res.body.cancel();
                 return;
             }
             if (res.ok && (res.status >= 200 && res.status <= 299)) {
@@ -155,7 +149,6 @@ class FetchStreamLoader extends BaseLoader {
                 }
 
                 return this._pump.call(this, res.body.getReader());
-
             } else {
                 this._status = LoaderStatus.kError;
                 if (this._onError) {
@@ -165,26 +158,34 @@ class FetchStreamLoader extends BaseLoader {
                 }
             }
         }).catch((e) => {
+            if (this._abortController && this._abortController.signal.aborted) {
+                return;
+            }
+
             this._status = LoaderStatus.kError;
             if (this._onError) {
                 this._onError(LoaderErrors.EXCEPTION, { code: -1, msg: e.message });
             } else {
-                return;
+                throw e;
             }
         });
     }
 
     abort() {
         this._requestAbort = true;
-        controller.abort();
-        controller = new AbortController();
-        signal = controller.signal;
-    }
 
+        if (this._status !== LoaderStatus.kBuffering || !Browser.chrome) {
+            // Chrome may throw Exception-like things here, avoid using if is buffering
+            if (this._abortController) {
+                try {
+                    this._abortController.abort();
+                } catch (e) { }
+            }
+        }
+    }
 
     _pump(reader) {  // ReadableStreamReader
         return reader.read().then((result) => {
-            //let t1 = performance.now();
             if (result.done) {
                 // First check received length
                 if (this._contentLength !== null && this._receivedLength < this._contentLength) {
@@ -195,7 +196,7 @@ class FetchStreamLoader extends BaseLoader {
                     if (this._onError) {
                         this._onError(type, info);
                     } else {
-                        //throw new RuntimeException(info.msg);
+                        throw new RuntimeException(info.msg);
                     }
                 } else {
                     // OK. Download complete
@@ -205,11 +206,14 @@ class FetchStreamLoader extends BaseLoader {
                     }
                 }
             } else {
-                if (this._requestAbort === true) {
-                    this._requestAbort = false;
+                if (this._abortController && this._abortController.signal.aborted) {
+                    this._status = LoaderStatus.kComplete;
+                    return;
+                } else if (this._requestAbort === true) {
                     this._status = LoaderStatus.kComplete;
                     return reader.cancel();
                 }
+
                 this._status = LoaderStatus.kBuffering;
 
                 let chunk = result.value.buffer;
@@ -219,11 +223,41 @@ class FetchStreamLoader extends BaseLoader {
                 if (this._onDataArrival) {
                     this._onDataArrival(chunk, byteStart, this._receivedLength);
                 }
+
                 this._pump(reader);
             }
         }).catch((e) => {
-            this._status = LoaderStatus.kComplete;
-            return;
+            if (this._abortController && this._abortController.signal.aborted) {
+                this._status = LoaderStatus.kComplete;
+                return;
+            }
+
+            if (e.code === 11 && Browser.msedge) {  // InvalidStateError on Microsoft Edge
+                // Workaround: Edge may throw InvalidStateError after ReadableStreamReader.cancel() call
+                // Ignore the unknown exception.
+                // Related issue: https://developer.microsoft.com/en-us/microsoft-edge/platform/issues/11265202/
+                return;
+            }
+
+            this._status = LoaderStatus.kError;
+            let type = 0;
+            let info = null;
+
+            if ((e.code === 19 || e.message === 'network error') && // NETWORK_ERR
+                (this._contentLength === null ||
+                    (this._contentLength !== null && this._receivedLength < this._contentLength))) {
+                type = LoaderErrors.EARLY_EOF;
+                info = { code: e.code, msg: 'Fetch stream meet Early-EOF' };
+            } else {
+                type = LoaderErrors.EXCEPTION;
+                info = { code: e.code, msg: e.message };
+            }
+
+            if (this._onError) {
+                this._onError(type, info);
+            } else {
+                throw new RuntimeException(info.msg);
+            }
         });
     }
 
